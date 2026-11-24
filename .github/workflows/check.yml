@@ -18,4 +18,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Builds and tests the editing crate in the bundled-Inter configuration (no
       # CRAFT_FONTS_DIR), which is the path the Type 3 fallback draws through.
-      - run: cargo test -p pdfcraft-edit --locked
+      - run: cargo test -p pdfcraft-edit
