@@ -12,10 +12,10 @@ pub(super) type Encoder = Box<dyn Fn(&str) -> Option<Vec<Type3Run>>>;
 /// selector's run) shows at that character spacing: its empty glyph advances nothing, and the
 /// spacing in force must not add to it either.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct Type3Run {
-    pub(super) name: String,
-    pub(super) bytes: Vec<u8>,
-    pub(super) spacing: Option<f64>,
+pub(crate) struct Type3Run {
+    pub(crate) name: String,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) spacing: Option<f64>,
 }
 
 /// A Unicode variation selector (U+FE00..U+FE0F): it picks a variant of the character before it
@@ -34,6 +34,36 @@ fn is_win_ansi_char(c: char) -> bool {
 
 pub(crate) fn needs_type3(text: &str) -> bool {
     text.chars().any(|c| !is_win_ansi_char(c))
+}
+
+/// The first character of `text` the Type 3 fallback can't draw, or `None` when every character is
+/// WinAnsi or has a glyph in a fallback face. Thai, Arabic and Hebrew are not judged here: the
+/// shaped path draws them, or the caller reports them first.
+pub(crate) fn type3_undrawable(text: &str, family: crate::added::Family, bold: bool) -> Option<char> {
+    // A line break is drawn as a line break and a tab as a space (see `draw`), so neither is judged.
+    let text: String = text.chars().filter(|c| !matches!(*c, '\n' | '\r')).collect();
+    if !needs_type3(&text) {
+        return None;
+    }
+    let Ok((faces, hebrew)) = type3_faces(&text, family, bold) else {
+        return text.chars().find(|c| !is_win_ansi_char(*c));
+    };
+    let named: Vec<char> = text.chars().filter(|c| !is_variation_selector(*c)).collect();
+    if named.is_empty() {
+        return None;
+    }
+    // Mirrors `type3_font`: one face for ordinary text, the Hebrew face plus the faces after it for
+    // Hebrew. A character none of them draws is reported.
+    let face = if hebrew { faces.first().copied() } else { fallback_face(&faces, &named, |face, ch| japanese_glyph_from(face, ch).is_ok()) };
+    let Some(face) = face else {
+        return text.chars().find(|c| !is_win_ansi_char(*c));
+    };
+    let others: &[&EmbeddedFace] = if hebrew { faces.get(1..).unwrap_or_default() } else { &[] };
+    text.chars().find(|&c| {
+        !is_win_ansi_char(c)
+            && !is_variation_selector(c)
+            && !std::iter::once(face).chain(others.iter().copied()).any(|f| japanese_glyph_from(f, c).is_ok())
+    })
 }
 
 /// The `/Name` of the Type 3 fonts generated for Japanese text.
@@ -232,7 +262,7 @@ pub(crate) struct Type3Fallback {
     /// face, `PCHe` for Hebrew text).
     pub(crate) names: Vec<String>,
     /// Every unique character with its advance (em), in order of first appearance.
-    pub(super) widths: Vec<(char, f64)>,
+    pub(crate) widths: Vec<(char, f64)>,
     /// Where each character is shown: the index of its font in `names`, and its code there.
     pub(crate) codes: HashMap<char, (usize, u8)>,
 }
@@ -396,7 +426,7 @@ pub(crate) fn type3_faces(text: &str, family: crate::added::Family, bold: bool) 
     Ok((std::iter::once(hebrew).chain(japanese).chain(latin).collect(), true))
 }
 
-pub(super) fn type3_font(
+pub(crate) fn type3_font(
     doc: &mut Document,
     fonts_res: &mut Dict,
     text: &str,
@@ -636,7 +666,7 @@ pub(crate) fn type3_font_dict(doc: &mut Document, glyphs: &[(char, Vec<u8>, f64)
 /// The runs that show `text` in the fallback: consecutive characters in one font form one run, so
 /// a font is switched only where the text moves to another font. A variation selector forms its
 /// own run, drawn at character spacing zero (see [`Type3Run`]). `None` if a character has no code.
-pub(super) fn type3_encode(fallback: &Type3Fallback, text: &str) -> Option<Vec<Type3Run>> {
+pub(crate) fn type3_encode(fallback: &Type3Fallback, text: &str) -> Option<Vec<Type3Run>> {
     let mut runs: Vec<(usize, Vec<u8>, Option<f64>)> = Vec::new();
     for ch in text.chars() {
         let (font, code) = *fallback.codes.get(&ch)?;

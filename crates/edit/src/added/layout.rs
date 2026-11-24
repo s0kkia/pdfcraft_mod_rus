@@ -191,8 +191,8 @@ pub(super) fn is_hebrew(c: char) -> bool {
 
 /// The first character of `t` that would be drawn as `?`: outside WinAnsiEncoding and not drawn
 /// with the craft-fonts Arabic (#125) or Hebrew (#128) face, or Arabic or Hebrew that the face can't
-/// draw (or that has no face to draw it). Page-content tools refuse such text; the Add-text editor
-/// keeps it open.
+/// draw (or that has no face to draw it). Text outside WinAnsi that the Type 3 fallback (bundled
+/// Inter) covers is drawable, so it is not reported.
 pub fn first_undrawable(t: &AddedText) -> Option<char> {
     if t.text.chars().any(is_thai) {
         if let Some(c) = t.text.chars().find(|c| is_thai(*c) && !pdfcraft_fonts::thai_has(*c)) {
@@ -208,9 +208,9 @@ pub fn first_undrawable(t: &AddedText) -> Option<char> {
         return Some(c);
     }
     if !shaped_by_a_face(t) {
-        // Drawn line by line in the item's standard font (`\n` splits lines). Without the face
-        // that is also how `draw` redraws an existing item, so it's checked that way.
-        return t.text.split('\n').find_map(pdfcraft_fonts::first_non_win_ansi);
+        // Drawn line by line: in the item's standard font, or — for text it can't show — with the
+        // Type 3 fallback (`draw`). Only a character no face draws is undrawable.
+        return crate::text::type3_undrawable(&t.text, t.family, t.bold);
     }
     // What `shaped_layout` leaves to the standard font, exactly as `draw_shaped` splits it.
     wrapped(t).into_iter().find_map(|(line, rtl, _)| {

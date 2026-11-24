@@ -8,6 +8,8 @@ use super::{
 };
 use pdfcraft_fonts::shaped_text::{self, ShapedFonts};
 
+use crate::text::{MAX_TYPE3_GLYPHS, needs_type3, type3_encode, type3_font};
+
 fn font_name(base: &str) -> String {
     format!("PCF{}", base.replace('-', ""))
 }
@@ -104,6 +106,58 @@ pub(super) fn draw_laid_shaped(
     Ok(())
 }
 
+/// `text` as the Type 3 fallback draws it: no line breaks, and a tab shown as a space (the bundled
+/// face has no tab glyph).
+fn type3_text(text: &str) -> String {
+    text.chars().filter(|c| !matches!(*c, '\n' | '\r')).map(|c| if c == '\t' { ' ' } else { c }).collect()
+}
+
+/// Draw a text item whose standard font can't show every character (e.g. Cyrillic): glyphs come
+/// from Type 3 fonts drawn from the bundled Inter face (see [`type3_font`]), one `Tm` per line and
+/// a `Tf`/`Tj` run per font change, with a ToUnicode map for copy and search.
+fn draw_fallback(doc: &mut Document, t: &AddedText, shown: &str, fonts: &mut Dict, out: &mut Vec<u8>) -> Result<(), EditError> {
+    let fallback = type3_font(doc, fonts, shown, t.family, t.bold, MAX_TYPE3_GLYPHS)?;
+    let mut widths = std::collections::HashMap::with_capacity(fallback.widths.len());
+    for (ch, w) in &fallback.widths {
+        widths.insert(*ch, *w);
+    }
+    let r = text_rect(t);
+    out.extend(format!("BT {}\n", t.fill_op()).bytes());
+    if t.char_spacing != 0.0 {
+        out.extend(format!("{} Tc\n", n(t.char_spacing)).bytes());
+    }
+    let all = wrapped(t);
+    let paragraphs: Vec<usize> = all.iter().map(|(_, _, p)| *p).collect();
+    for (i, (line, ..)) in all.iter().enumerate() {
+        let line = type3_text(line);
+        let w = line.chars().map(|c| widths.get(&c).copied().unwrap_or(0.0)).sum::<f64>() * t.size
+            + t.char_spacing * line.chars().count() as f64;
+        let y = r[3] - (i as f64 * 1.2 + 0.95) * t.size;
+        // Justifying needs word spacing on a space code the generated font doesn't have, so a
+        // justified line is left-aligned here.
+        let (x, _) = placed(t, r, &paragraphs, i, w, line.matches(' ').count(), false);
+        let runs = type3_encode(&fallback, &line)
+            .ok_or_else(|| EditError::Invalid(format!("\"{}\" can't be shown by the {} fallback", t.text, fallback.family)))?;
+        out.extend(format!("1 0 0 1 {} {} Tm\n", n(x), n(y)).bytes());
+        for run in runs {
+            out.extend(format!("/{} {} Tf ", run.name, n(t.size)).bytes());
+            if let Some(tc) = run.spacing {
+                // A variation selector's empty glyph: shown at spacing zero, then the line's own
+                // spacing back, so it adds no advance.
+                out.extend(format!("{} Tc ", n(tc)).bytes());
+                out.extend(literal(&run.bytes));
+                out.extend_from_slice(b" Tj ");
+                out.extend(format!("{} Tc\n", n(t.char_spacing)).bytes());
+            } else {
+                out.extend(literal(&run.bytes));
+                out.extend_from_slice(b" Tj\n");
+            }
+        }
+    }
+    out.extend_from_slice(b"ET\n");
+    Ok(())
+}
+
 /// Content and resources for an item; `view` maps display space to user space. `taken` holds the
 /// page's font names. `existing`: the item is being replaced, so a build without the Arabic or
 /// Hebrew face keeps drawing that text as `?`, as before it was supported, rather than refusing to
@@ -139,6 +193,14 @@ pub(super) fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict
                 || face_or_new(is_hebrew, pdfcraft_fonts::document_hebrew_font(false).is_some())
             {
                 draw_shaped(doc, t, taken, &mut fonts, &mut out)?;
+                res.set(b"Font".to_vec(), Object::Dict(fonts));
+                out.extend_from_slice(b"Q\n");
+                return Ok((out, res));
+            }
+            // Text the standard font can't show (e.g. Cyrillic) is drawn with the Type 3 fallback.
+            let shown = type3_text(&t.text);
+            if needs_type3(&shown) {
+                draw_fallback(doc, t, &shown, &mut fonts, &mut out)?;
                 res.set(b"Font".to_vec(), Object::Dict(fonts));
                 out.extend_from_slice(b"Q\n");
                 return Ok((out, res));
