@@ -40,8 +40,9 @@ pub(crate) fn needs_type3(text: &str) -> bool {
 /// WinAnsi or has a glyph in a fallback face. Thai, Arabic and Hebrew are not judged here: the
 /// shaped path draws them, or the caller reports them first.
 pub(crate) fn type3_undrawable(text: &str, family: crate::added::Family, bold: bool) -> Option<char> {
-    // A line break is drawn as a line break and a tab as a space (see `draw`), so neither is judged.
-    let text: String = text.chars().filter(|c| !matches!(*c, '\n' | '\r')).collect();
+    // A line feed is drawn as a line break and a tab as a space (see `draw`), so neither is judged;
+    // a carriage return is drawn as `?` (added text splits on LF only), so it is.
+    let text: String = text.chars().filter(|c| *c != '\n').collect();
     if !needs_type3(&text) {
         return None;
     }

@@ -8,7 +8,7 @@ use super::{
 };
 use pdfcraft_fonts::shaped_text::{self, ShapedFonts};
 
-use crate::text::{MAX_TYPE3_GLYPHS, needs_type3, type3_encode, type3_font};
+use crate::text::{MAX_TYPE3_GLYPHS, needs_type3, type3_encode, type3_font, type3_undrawable};
 
 fn font_name(base: &str) -> String {
     format!("PCF{}", base.replace('-', ""))
@@ -198,8 +198,11 @@ pub(super) fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict
                 return Ok((out, res));
             }
             // Text the standard font can't show (e.g. Cyrillic) is drawn with the Type 3 fallback.
+            // Text no fallback face draws (Arabic without its craft-fonts face, or a carriage return
+            // in an item stored by an older version) stays on the standard font, which writes `?`,
+            // as it did before the fallback existed.
             let shown = type3_text(&t.text);
-            if needs_type3(&shown) {
+            if needs_type3(&shown) && type3_undrawable(&t.text, t.family, t.bold).is_none() {
                 draw_fallback(doc, t, &shown, &mut fonts, &mut out)?;
                 res.set(b"Font".to_vec(), Object::Dict(fonts));
                 out.extend_from_slice(b"Q\n");
