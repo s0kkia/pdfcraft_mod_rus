@@ -1,0 +1,21 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Builds and tests the editing crate in the bundled-Inter configuration (no
+      # CRAFT_FONTS_DIR), which is the path the Type 3 fallback draws through.
+      - run: cargo test -p pdfcraft-edit --locked
