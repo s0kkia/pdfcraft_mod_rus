@@ -22,6 +22,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-i18n
+          ref: 866aff71dd63d8369eb100b9c432b5af1400c22a
+          path: craft-i18n
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -32,6 +37,9 @@ jobs:
         run: dotnet tool install --global wix --version 5.0.2
       - name: Build and package (portable + MSI)
         shell: pwsh
+        env:
+          CRAFT_I18N_DIR: ${{ github.workspace }}/craft-i18n
+          CRAFT_I18N_REQUIRED: '1'
         run: pwsh packaging/windows/package.ps1 -Arch x64
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -45,6 +53,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-i18n
+          ref: 866aff71dd63d8369eb100b9c432b5af1400c22a
+          path: craft-i18n
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -54,6 +67,9 @@ jobs:
       - name: Install trunk
         run: cargo install trunk --locked
       - name: Build and package web
+        env:
+          CRAFT_I18N_DIR: ${{ github.workspace }}/craft-i18n
+          CRAFT_I18N_REQUIRED: '1'
         run: bash packaging/web/package.sh
       - name: Upload artifact
         uses: actions/upload-artifact@v4
