@@ -15,7 +15,12 @@
 pub const UPDATE_APP: craft::update::app::App = craft::update::app::App {
     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.pdfcraft.png")),
     accent: Some([0xb7, 0x02, 0x28]),
-    ..craft::update::suite::PDFCRAFT
+    ..craft::update::suite::App {
+        former_ids: &["printcraft"],
+        former_names: &["PrintCraft"],
+        repo: "s0kkia/pdfcraft_mod_rus",
+        ..craft::update::suite::PDFCRAFT
+    }
 };
 
 /// PdfCraft as the framework's services know it (the host, About, recovery).
