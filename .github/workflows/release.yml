@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (without leading v), e.g. 0.22.0"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-x64
+      - name: Install WiX v5
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: Build and package (portable + MSI)
+        shell: pwsh
+        run: pwsh packaging/windows/package.ps1 -Arch x64
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            dist/release/*.zip
+            dist/release/*.msi
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web-wasm
+      - name: Install trunk
+        run: cargo install trunk --locked
+      - name: Build and package web
+        run: bash packaging/web/package.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dist/release/*.zip
+
+  release:
+    needs: [build-windows, build-web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release create "$TAG" artifacts/* \
+            --repo "${{ github.repository }}" \
+            --title "$TAG" \
+            --notes "PdfCraft mod (s0kkia). See commit ${{ github.sha }}." \
+            --latest
