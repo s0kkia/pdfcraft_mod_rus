@@ -21,8 +21,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: storytold/craft-i18n
           ref: 866aff71dd63d8369eb100b9c432b5af1400c22a
@@ -42,7 +42,7 @@ jobs:
           CRAFT_I18N_REQUIRED: '1'
         run: pwsh packaging/windows/package.ps1 -Arch x64
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-x64
           path: |
@@ -52,8 +52,8 @@ jobs:
   build-web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: storytold/craft-i18n
           ref: 866aff71dd63d8369eb100b9c432b5af1400c22a
@@ -72,7 +72,7 @@ jobs:
           CRAFT_I18N_REQUIRED: '1'
         run: bash packaging/web/package.sh
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web
           path: dist/release/*.zip
@@ -81,9 +81,9 @@ jobs:
     needs: [build-windows, build-web]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
